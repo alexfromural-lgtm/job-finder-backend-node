@@ -1,0 +1,651 @@
+# ⚡ Job Finder — Backend API
+
+A role-based job board REST API built with **Express.js**, **PostgreSQL**, **Prisma ORM**, and **Redis/Bull** message queuing. Supports Job Seeker and Recruiter roles with **dual HTTP-only cookie auth** — both the short-lived access token and the long-lived refresh token are set as `HttpOnly; SameSite=Lax` cookies, so no token ever touches JavaScript. High-traffic write operations (apply to job, save job) are handled asynchronously via a Bull queue.
+
+---
+
+## 🛠 Tech Stack
+
+| Technology | Purpose |
+|------------|---------|
+| Node.js + Express.js | HTTP server & routing |
+| TypeScript | Type safety |
+| Prisma ORM | Database access layer |
+| PostgreSQL | Relational database |
+| Redis 7 | Message broker for Bull queues |
+| Bull | Job queue for async DB write operations |
+| JWT | Access & refresh token auth |
+| bcrypt | Password hashing |
+| Zod | Request validation + startup env schema validation |
+| helmet | Secure HTTP response headers |
+| express-rate-limit | Brute-force & signup spam protection |
+| compression | Gzip response compression (production) |
+| Docker / Docker Compose | Containerised dev environment |
+
+---
+
+## 🏗 Project Structure
+
+```
+src/
+├── config/
+│   └── env.ts                       # Zod-validated ENV — exits immediately if vars are missing/invalid
+├── controllers/                     # Route handlers (auth, job, jobseeker, recruiter)
+├── errors/
+│   └── AppError.ts                  # Typed application error (message + HTTP status code)
+├── middleware/
+│   ├── auth.middleware.ts            # requireAuth, authorizeRoles
+│   ├── validate.middleware.ts        # Zod request body validation
+│   └── errorHandler.middleware.ts   # Global Express error handler (mounted last in index.ts)
+├── services/                        # Business logic layer
+├── routes/                          # Express router definitions (includes queue.route.ts)
+├── validators/                      # Zod schemas
+│   ├── auth.schema.ts               # loginSchema (NEW)
+│   ├── jobseeker.schema.ts          # signupSchema + updateJobSeekerProfileSchema (NEW)
+│   ├── application.schema.ts        # applicationSchema + applicationStatusSchema (NEW)
+│   ├── job.schema.ts                # jobSchema + JobInput / JobUpdateInput types (NEW)
+│   └── recruiter.schema.ts          # recruiterSignupSchema + recruiter-profile schema
+├── prisma/                          # Prisma client singleton
+├── queue/                           # Bull queue infrastructure
+│   ├── queue.ts                     # Shared Bull queue instance (db-write-queue)
+│   ├── worker.ts                    # Queue processor — dispatches to service layer
+│   └── types.ts                     # QueuePayload discriminated union
+└── utils/                           # token.ts, hash.ts, auth.utils.ts, job.utils.ts
+prisma/
+├── schema.prisma                    # Database schema & enums
+└── seed.ts                          # Dev seed data
+```
+
+---
+
+## 🔐 Roles & Permissions
+
+| Role | Description |
+|------|-------------|
+| `JOB_SEEKER` | Browse jobs, apply, save jobs, manage profile |
+| `RECRUITER` | Post/edit/delete jobs, view applicants, manage company profile |
+| `ADMIN` | Seed-only; no admin routes exposed yet |
+
+---
+
+## 🚀 Setup & Running Locally
+
+### Prerequisites
+- Docker & Docker Compose (recommended)
+- Node.js v18+ (only needed if running without Docker)
+
+### 1. Configure environment
+
+```bash
+cp .env.sample .env
+# Then edit .env with your actual values
+```
+
+**Key `.env` variables:**
+
+```env
+DATABASE_URL=postgresql://job_finder_user:secure_password_123@db:5432/job_finder
+ACCESS_TOKEN_SECRET=<32-char random string>
+REFRESH_TOKEN_SECRET=<32-char random string>
+ACCESS_TOKEN_EXPIRES_IN=15m
+REFRESH_TOKEN_EXPIRES_IN=7d
+PORT=5002
+NODE_ENV=development          # set to "production" to enable gzip compression
+REDIS_URL=redis://redis:6379
+QUEUE_CONCURRENCY=5
+CORS_ORIGIN=http://localhost:3000   # update to your frontend domain in production
+```
+
+> **Strict env validation:** `src/config/env.ts` now parses all variables through a Zod schema at startup. If any required variable is missing or invalid (e.g. a secret shorter than 16 characters), the process **exits immediately** with a descriptive error rather than failing silently at runtime.
+
+**Generate secrets:**
+
+```bash
+node -e "const c=require('crypto');console.log(c.randomBytes(32).toString('base64').substring(0,32));"
+```
+
+### 2. Start with Docker
+
+```bash
+docker-compose up --build
+```
+
+This starts:
+- `job-finder-backend` on **port 5002**
+- `job-finder-db` (PostgreSQL) on **port 5432**
+- `job-finder-redis` (Redis 7) on **port 6379**
+- `pgAdmin4` on **port 5050**
+
+### 3. Initialize the database
+
+Run these three commands in order on a fresh setup:
+
+```bash
+# Generate the Prisma client
+docker exec job-finder-backend npx prisma generate
+
+# Apply migrations (creates all tables)
+docker exec job-finder-backend npx prisma migrate deploy
+
+# Seed the database with demo data
+docker exec job-finder-backend npx prisma db seed
+```
+
+This creates demo users:
+| Email | Password | Role |
+|-------|----------|------|
+| `admin@example1.com` | `admin` | ADMIN |
+| `recruiter@example.com` | `recruiter123` | RECRUITER |
+| `seeker@example.com` | `seeker123` | JOB_SEEKER |
+
+---
+
+## 🧪 API Reference
+
+Base URL: `http://localhost:5002/api`
+
+> **Standardised response shape:** All successful responses wrap their payload under a `data` key — e.g. `{ "data": { ... } }`. Error responses always return `{ "error": "<message>" }`.
+
+---
+
+### Auth — `/api/auth`
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `POST` | `/signup/jobseeker` | — | Register as Job Seeker |
+| `POST` | `/signup/recruiter` | — | Register as Recruiter (includes company fields) |
+| `POST` | `/login` | — | Login; sets `accessToken` + `refreshToken` HTTP-only cookies |
+| `POST` | `/logout` | — | Clears both `accessToken` and `refreshToken` cookies |
+| `POST` | `/refresh` | Cookie | Rotates both tokens; sets fresh cookies |
+| `GET`  | `/me` | Cookie (`accessToken`) | Get current authenticated user |
+| `POST` | `/upgrade/recruiter` | Cookie (JOB_SEEKER) | Upgrade Job Seeker account to Recruiter |
+
+**Signup — Job Seeker** `POST /api/auth/signup/jobseeker`
+```json
+{ "name": "John Doe", "email": "john@example.com", "password": "secret123" }
+```
+
+**Signup — Recruiter** `POST /api/auth/signup/recruiter`
+```json
+{
+  "name": "Jane Smith",
+  "email": "jane@corp.com",
+  "password": "secret123",
+  "companyName": "Acme Corp",
+  "companyWebsite": "https://acme.com",
+  "industry": "Technology",
+  "description": "We build cool stuff."
+}
+```
+
+**Login** `POST /api/auth/login`
+
+Now Zod-validated via `loginSchema` (requires a valid email format and a non-empty password).
+```json
+{ "email": "john@example.com", "password": "secret123" }
+```
+Response: `{ "message": "Logged in successfully" }` + two cookies:
+- `Set-Cookie: accessToken=<JWT>; HttpOnly; SameSite=Lax` (15 min)
+- `Set-Cookie: refreshToken=<JWT>; HttpOnly; SameSite=Lax` (7 days)
+
+> The `accessToken` is **never returned in the response body** — it is inaccessible to JavaScript, eliminating XSS-based token theft.
+> Deactivated accounts (`isActive: false`) are rejected with `403 Forbidden`.
+
+**Refresh** `POST /api/auth/refresh` _(requires `refreshToken` HTTP-only cookie)_
+
+Response: `{ "message": "Token refreshed" }` + two refreshed cookies.
+> Rotates both tokens. Called automatically by the frontend interceptor on `401` responses.
+
+**Get Me** `GET /api/auth/me` _(requires `accessToken` HTTP-only cookie)_
+```json
+{
+  "data": {
+    "id": "uuid",
+    "name": "John Doe",
+    "email": "john@example.com",
+    "roles": ["JOB_SEEKER"],
+    "isActive": true,
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "updatedAt": "2026-01-01T00:00:00.000Z"
+  }
+}
+```
+
+**Upgrade to Recruiter** `POST /api/auth/upgrade/recruiter` _(requires `JOB_SEEKER` cookie)_
+
+- Body: same shape as recruiter signup — now Zod-validated via `recruiterSignupSchema`.
+- Returns `409 Conflict` if the user already has a recruiter profile.
+- Re-issues fresh tokens immediately so the new `RECRUITER` role is active without a separate login.
+
+---
+
+### Jobs — `/api/jobs`
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `GET` | `/all` | — | List all active jobs (supports `?search=`, `?category=`, `?location=`) |
+| `GET` | `/:id` | — | Get a single job by ID |
+| `GET` | `/recruiter` | Cookie (RECRUITER) | Get jobs posted by the authenticated recruiter |
+| `POST` | `/` | Cookie (RECRUITER) | Create a new job posting |
+| `PUT` | `/:id` | Cookie (RECRUITER) | Update a job (owner only) |
+| `DELETE` | `/:id` | Cookie (RECRUITER) | Delete a job (owner only) |
+
+**Search expansion:** `?search=` now matches against `title`, `description`, **and `requirements`** (previously only title + description).
+
+**Create / Update Job body:**
+```json
+{
+  "title": "Senior React Developer",
+  "description": "We are looking for...",
+  "requirements": "5+ years React experience",
+  "location": "Remote",
+  "salaryRange": "$120,000 – $160,000",
+  "category": "Engineering"
+}
+```
+
+---
+
+### Job Seeker — `/api/jobseeker`
+
+All endpoints require an `accessToken` HTTP-only cookie and role `JOB_SEEKER`.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/profile` | Get own Job Seeker profile |
+| `PATCH` | `/profile` | Update profile — now Zod-validated (`updateJobSeekerProfileSchema`) |
+| `POST` | `/apply/:jobId` | **Enqueue** an application — returns `202 Accepted` + `jobId` |
+| `GET` | `/applications` | List own applications |
+| `DELETE` | `/applications/:id` | Withdraw an application |
+| `POST` | `/saved/:jobId` | **Enqueue** a save-job write — returns `202 Accepted` + `jobId` |
+| `GET` | `/saved` | List saved jobs |
+| `DELETE` | `/saved/:jobId` | Remove a saved job |
+
+> **Async writes:** `POST /apply/:jobId` and `POST /saved/:jobId` no longer block on the DB write. They immediately enqueue the work via Bull and return `202 Accepted` with a `{ jobId, status: "queued" }` body. The client must poll `GET /api/queue/job/:jobId` to track completion.
+
+**Profile update body** (`PATCH /profile`) — all fields optional:
+```json
+{
+  "bio": "Full-stack developer with 5 years experience.",
+  "location": "San Francisco, CA",
+  "skills": ["TypeScript", "React", "Node.js"],
+  "education": "B.Sc. Computer Science",
+  "experience": "Senior Engineer at Acme Corp (2022–present)",
+  "resumeUrl": "https://example.com/resume.pdf"
+}
+```
+Constraints: `bio` ≤ 500 chars, `location` ≤ 100 chars, `resumeUrl` must be a valid URL or empty string, `coverLetter` (apply) ≤ 2000 chars.
+
+**Apply response (202):**
+```json
+{ "jobId": "<bull-job-id>", "status": "queued" }
+```
+
+---
+
+### Recruiter — `/api/recruiter`
+
+All endpoints require an `accessToken` HTTP-only cookie and role `RECRUITER`.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/profile` | Get own Recruiter/company profile |
+| `PATCH` | `/profile` | Update company profile (companyName, companyWebsite, description, industry) |
+| `GET` | `/jobs/:jobId/applications` | List applicants for a specific job |
+| `PATCH` | `/applications/:id/status` | Update application status — now Zod-validated (`applicationStatusSchema`) |
+
+**Application statuses:** `submitted` · `shortlisted` · `under_review` · `rejected`
+
+**Update status body** (`PATCH /applications/:id/status`):
+```json
+{ "status": "shortlisted" }
+```
+
+---
+
+### Queue — `/api/queue`
+
+Public polling endpoint — no auth required.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/job/:jobId` | Poll the status of a queued write operation |
+
+**Response:**
+```json
+{
+  "id": "<bull-job-id>",
+  "type": "apply-to-job",
+  "status": "completed",
+  "attemptsMade": 1,
+  "createdAt": "2026-05-11T18:00:00.000Z",
+  "result": { /* Application object on completion */ }
+}
+```
+
+**Possible statuses:** `waiting` · `active` · `completed` · `failed` · `delayed` · `paused`
+
+On `completed`, the `result` field contains the Application (or SavedJob) object.  
+On `failed`, the `failedReason` field contains the error message.
+
+---
+
+## 🛡 Global Error Handling
+
+A centralised `errorHandler` middleware (`src/middleware/errorHandler.middleware.ts`) is mounted **last** in `src/index.ts`, after all routes. All controllers call `next(err)` instead of writing their own error responses.
+
+| Condition | HTTP Status | Response |
+|-----------|-------------|----------|
+| `AppError` instance | `err.statusCode` | `{ "error": err.message }` |
+| Prisma unique constraint (`P2002`) | `409` | `{ "error": "A record with that value already exists." }` |
+| JWT errors (`jwt expired`, `jwt malformed`, `invalid token`) | `401` | `{ "error": "<jwt message>" }` |
+| All other errors | `500` | `{ "error": "Internal server error" }` (detail logged server-side) |
+
+Throw a typed `AppError` from any service:
+```ts
+throw new AppError("Job not found", 404);
+```
+
+---
+
+## 🔒 Security & Performance
+
+### Middleware stack (applied in `src/index.ts`)
+
+| Middleware | Applied | Purpose |
+|------------|---------|----------|
+| `helmet()` | All routes — **first** | Sets 15 secure HTTP headers (`X-Frame-Options`, `X-Content-Type-Options`, `Strict-Transport-Security`, `Content-Security-Policy`, etc.) |
+| `compression()` | All routes — **production only** | Gzip-compresses JSON responses (~60–80% size reduction). Skipped in development to keep logs readable. |
+| `cors()` | All routes | Restricts cross-origin requests to the origin defined by `CORS_ORIGIN`. |
+| `errorHandler` | **Last** — after all routes | Global error handler. Converts `AppError`, Prisma errors, and JWT errors to structured JSON. |
+
+### Cookie security
+
+Both `accessToken` and `refreshToken` are set as `HttpOnly; SameSite=Lax` cookies.
+
+| Attribute | Value | Why |
+|-----------|-------|-----|
+| `HttpOnly` | `true` | The cookie is invisible to JavaScript, so an XSS payload cannot steal the token even if it runs on the page. |
+| `Secure` | `true` in production | The cookie is only transmitted over HTTPS, preventing interception on the wire. |
+| `SameSite` | `Lax` | Balances usability and CSRF protection — see below. |
+
+**Why `Lax` and not `Strict`?**
+
+`SameSite=Strict` blocks the cookie on *every* cross-site navigation, including top-level `GET` requests — for example, when a user clicks a link in an email or is redirected back to the app after an OAuth flow. That means the browser silently drops the cookie and the user is effectively logged out the moment they arrive from an external origin, even though no dangerous action is being performed.
+
+`SameSite=Lax` allows the cookie on top-level `GET` navigations (the user follows a link into the app) while **still blocking it on cross-site state-mutating requests** — `POST`, `PUT`, `PATCH`, `DELETE`. Those are the requests that can cause harm in a CSRF attack, so `Lax` covers the real attack surface without breaking legitimate auth flows.
+
+> **In short:** `Lax` = "let me in through the front door, but never submit a form on my behalf from another site."
+
+---
+
+### AWS deployment & cookie architecture
+
+#### Runtime cost comparison (Node.js vs Go vs Java Spring Boot)
+
+| Runtime | Memory footprint | Cold-start speed | Lambda cost | Notes |
+|---------|-----------------|-----------------|-------------|-------|
+| **Go** | ~31 MB | Fastest | Lowest | Best density on Fargate; cheapest per-invocation on Lambda |
+| **Node.js** | Moderate | Fast | Mid | Ideal for I/O-bound apps (e.g. this job-finder service); good dev velocity |
+| **Java Spring Boot** | High | Slowest | Highest | Requires larger instance allocations; poor serverless cold-start story |
+
+> **Current stack (Node.js)** is a pragmatic choice for an I/O-bound service. Go would lower infrastructure cost at very high scale, but the gap is negligible for typical job-board traffic volumes.
+
+#### HttpOnly cookie behaviour per AWS hosting type
+
+| Hosting | Cookie handling | Notes |
+|---------|----------------|-------|
+| **AWS Lambda** | Must map `Set-Cookie` header in function response | Lightweight runtimes (Go) reduce cost per invocation |
+| **AWS Fargate** | Handled natively behind an ALB | Standard cookie flow; no special mapping needed |
+| **Amazon EC2** | Full native control over network stack | Most flexible; headers processed directly by the process |
+
+#### `sameSite` decision matrix for AWS deployments
+
+The correct `sameSite` value depends entirely on how frontend and backend are hosted:
+
+| Deployment topology | `sameSite` needed | `secure` required | Notes |
+|--------------------|-------------------|-------------------|-------|
+| Same domain, ALB path-based routing (`/api/*` → backend) | `"lax"` ✅ | Yes (HTTPS) | Current `"lax"` setting works as-is |
+| Different subdomains (`app.example.com` vs `api.example.com`) | `"none"` ⚠️ | **Must be `true`** | Browsers treat subdomains as cross-site; `"lax"` silently drops cookies on background `fetch` calls |
+| Completely different domains | `"none"` ⚠️ | **Must be `true`** | Same as above |
+
+**Current code (`sameSite: "lax"`)** is correct for local development and for a same-domain production deployment. If the frontend and backend are ever split onto separate subdomains or domains, the cookie options in `src/utils/auth.utils.ts` must be updated to:
+
+```typescript
+res.cookie("accessToken", accessToken, {
+  httpOnly: true,
+  secure: true,       // Must be true for SameSite=None
+  sameSite: "none",   // Explicitly allows cross-site cookie passing
+  maxAge: ENV.ACCESS_TOKEN_MAX_AGE_MS,
+});
+```
+
+The same change applies to `setRefreshTokenCookie`. Note that `SameSite=None` **requires HTTPS** — a valid TLS certificate (e.g. via AWS ACM + ALB) is non-negotiable.
+
+#### Silent token refresh (already implemented)
+
+The frontend `axiosClient.ts` intercepts `401` responses, calls `/auth/refresh` once, and replays the original request — all transparently, with no token values ever exposed to JavaScript. This covers the main operational complexity of `HttpOnly`-cookie-based auth across domains.
+
+---
+
+### Rate limiting (applied per route in `src/routes/auth.route.ts`)
+
+| Limiter | Routes | Window | Max requests | Purpose |
+|---------|--------|--------|-------------|----------|
+| `authLimiter` | `POST /login`, `POST /refresh` | 15 min | 10 | Prevents brute-force attacks and token-refresh flooding |
+| `signupLimiter` | `POST /signup/jobseeker`, `POST /signup/recruiter` | 1 hour | 5 | Prevents automated account creation spam |
+
+On limit breach, the API returns `429 Too Many Requests` with a JSON error body and standard `RateLimit-*` headers (RFC 6585).
+
+---
+
+## 🗄 Database
+
+### Useful psql commands
+
+```bash
+# Connect from PowerShell
+docker exec -it job-finder-db psql -U job_finder_user -d job_finder -W
+# Password: secure_password_123
+
+# Inside the container
+psql -U job_finder_user -d job_finder
+```
+
+### pgAdmin4
+
+- URL: `http://localhost:5050`
+- Login: `admin@example.com` / `admin`
+
+### Check if port 5432 is in use (Windows)
+
+```bash
+netstat -ano | findstr :5432
+
+Get-Process -Id (Get-NetTCPConnection -LocalPort 5432).OwningProcess | Stop-Process -Force
+```
+
+---
+
+## 🌱 Seeding
+
+```bash
+# Inside Docker
+docker exec job-finder-backend npx prisma db seed
+
+# Locally (without Docker)
+npx prisma db seed
+```
+
+---
+
+## 🔗 Frontend
+
+The React frontend lives at [`../job-finder-react-customized`](../job-finder-react-customized) and proxies all `/api` calls to this service on port **5002**.
+
+---
+
+## 🔧 Upgrading Services
+
+This section documents how to safely upgrade each Docker service to a new version.
+
+---
+
+### PostgreSQL — Major Version Upgrade
+
+> ⚠️ **PostgreSQL major versions (e.g. 15 → 16) are NOT backward compatible.**
+> The on-disk data format changes between major releases. Docker will start the container but PostgreSQL will immediately `FATAL` and refuse to open the old data directory.
+
+#### Symptoms
+```
+FATAL:  database files are incompatible with server
+DETAIL: The data directory was initialized by PostgreSQL version 15, which is
+        not compatible with this version 16.x
+```
+The container will fail its healthcheck, and the backend will never start (`dependency failed to start: container job-finder-db is unhealthy`).
+
+#### Upgrade procedure (development / disposable data)
+
+1. **Edit `docker-compose.yml`** — bump the image tag on the `postgres` service:
+   ```yaml
+   # docker-compose.yml  ·  postgres service
+   image: postgres:16   # was postgres:15
+   ```
+
+2. **Stop all containers AND delete the named volume:**
+   ```bash
+   docker-compose down -v
+   ```
+   > The `-v` flag removes all named volumes declared in the compose file
+   > (`pgdata` in this project). **All existing data will be lost.**
+
+3. **Bring everything back up:**
+   ```bash
+   docker-compose up --build
+   ```
+   PostgreSQL 16 will find an empty volume and run `initdb` automatically.
+
+4. **Re-initialise the database:**
+   ```bash
+   docker exec job-finder-backend npx prisma migrate deploy
+   docker exec job-finder-backend npx prisma db seed
+   ```
+
+#### Upgrade procedure (production / data must be preserved)
+
+When you cannot afford to lose data, perform a logical dump **before** upgrading:
+
+```bash
+# 1. Dump from the running PG 15 container
+docker exec job-finder-db pg_dump -U $DB_USER -d job_finder -F c -f /tmp/job_finder_pg15.dump
+
+# 2. Copy the dump to the host
+docker cp job-finder-db:/tmp/job_finder_pg15.dump ./job_finder_pg15.dump
+
+# 3. Stop containers and drop the old volume
+docker-compose down -v
+
+# 4. Bump the image tag to postgres:16 in docker-compose.yml, then start
+docker-compose up -d postgres
+
+# 5. Wait for PG 16 to be healthy, then restore
+docker cp ./job_finder_pg15.dump job-finder-db:/tmp/
+docker exec job-finder-db pg_restore -U $DB_USER -d job_finder /tmp/job_finder_pg15.dump
+
+# 6. Start remaining services
+docker-compose up -d
+```
+
+#### Healthcheck dependency (already configured)
+
+The `backend` service is configured to wait until PostgreSQL is fully ready before starting:
+
+```yaml
+# docker-compose.yml
+backend:
+  depends_on:
+    postgres:
+      condition: service_healthy   # waits for pg_isready to pass
+
+postgres:
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d job_finder"]
+    interval: 5s
+    timeout: 5s
+    retries: 10
+    start_period: 10s
+```
+
+This eliminates the `P1001: Can't reach database server` Prisma error that occurs when the backend starts before PostgreSQL has finished initialising.
+
+---
+
+### Redis — Minor / Patch Version Upgrade
+
+Redis minor and patch upgrades are **data-compatible**; you do not need to delete the volume.
+
+1. Edit `docker-compose.yml`:
+   ```yaml
+   image: redis:7-alpine   # bump to e.g. redis:8-alpine
+   ```
+2. Pull and restart only the Redis service:
+   ```bash
+   docker-compose pull redis
+   docker-compose up -d redis
+   ```
+
+> For Redis **major** version upgrades (e.g. 7 → 8), consult the Redis release notes for breaking changes. Bull/BullMQ queue jobs stored in Redis are generally forwards-compatible, but verify before upgrading in production.
+
+---
+
+### Node.js Backend — Runtime Version Upgrade
+
+The backend runtime version is pinned in `Dockerfile`:
+
+```dockerfile
+FROM node:18        # bump to node:20, node:22, etc.
+```
+
+Steps:
+1. Update the `FROM` line in `Dockerfile`.
+2. Rebuild the image:
+   ```bash
+   docker-compose up --build backend
+   ```
+3. Verify the running version:
+   ```bash
+   docker exec job-finder-backend node --version
+   ```
+
+> Always test Prisma, Bull, and native crypto bindings after a Node.js major version bump — some native addons may need to be recompiled.
+
+---
+
+### pgAdmin4 — Version Upgrade
+
+pgAdmin stores session state in a volume but carries no critical business data.
+
+1. Edit `docker-compose.yml`:
+   ```yaml
+   image: dpage/pgadmin4:8   # pin to a specific version
+   ```
+2. Restart the service:
+   ```bash
+   docker-compose up -d pgadmin
+   ```
+
+---
+
+### General Upgrade Checklist
+
+Use this checklist for any service bump:
+
+- [ ] Read the release notes / CHANGELOG for **breaking changes**
+- [ ] Determine if the data volume is **version-compatible** (major DB bumps usually are not)
+- [ ] Back up data if the volume will be deleted
+- [ ] Update the image tag in `docker-compose.yml`
+- [ ] Run `docker-compose pull <service>` to fetch the new image
+- [ ] Run `docker-compose up -d <service>` (or `--build` for the Node.js backend)
+- [ ] Check container logs: `docker-compose logs -f <service>`
+- [ ] Run integration tests / smoke-test the API
+- [ ] Commit the `docker-compose.yml` change with the version bump noted in the commit message
