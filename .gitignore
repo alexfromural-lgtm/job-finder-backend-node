@@ -15,5 +15,8 @@ node_modules
 .cursor/
 .codex/
 
+# Husky internal storage (auto-generated, not tracked)
+.husky/_
+
 documents
 .DS_Store
