@@ -1,5 +1,5 @@
-import { Router, Request, Response } from "express";
-import dbWriteQueue from "../queue/queue";
+import { Router, Request, Response } from 'express';
+import dbWriteQueue from '../queue/queue';
 
 const router = Router();
 
@@ -11,13 +11,13 @@ const router = Router();
  *
  * Statuses: waiting | active | completed | failed | delayed | paused
  */
-router.get("/job/:jobId", async (req: Request, res: Response) => {
+router.get('/job/:jobId', async (req: Request, res: Response) => {
   const { jobId } = req.params;
 
   const job = await dbWriteQueue.getJob(jobId);
 
   if (!job) {
-    res.status(404).json({ error: "Job not found" });
+    res.status(404).json({ error: 'Job not found' });
     return;
   }
 
@@ -30,11 +30,11 @@ router.get("/job/:jobId", async (req: Request, res: Response) => {
     createdAt: new Date(job.timestamp).toISOString(),
   };
 
-  if (state === "completed") {
+  if (state === 'completed') {
     response.result = job.returnvalue;
   }
 
-  if (state === "failed") {
+  if (state === 'failed') {
     response.failedReason = job.failedReason;
   }
 

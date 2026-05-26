@@ -14,7 +14,7 @@ export const validate = (schema: ZodType<any>) => {
         errors: result.error.issues,
       });
     }
-    req.body = result.data; 
+    req.body = result.data;
     next();
   };
 };

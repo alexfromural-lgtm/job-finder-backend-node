@@ -1,46 +1,41 @@
-import { Router } from "express";
-import { authorizeRoles, requireAuth } from "../middleware/auth.middleware";
-import { validate } from "../middleware/validate.middleware";
-import { jobSchema } from "../validators/job.schema";
-import * as JobController from "../controllers/job.controller";
+import { Router } from 'express';
+import { authorizeRoles, requireAuth } from '../middleware/auth.middleware';
+import { validate } from '../middleware/validate.middleware';
+import { jobSchema } from '../validators/job.schema';
+import * as JobController from '../controllers/job.controller';
 
 const router = Router();
 
 // Public
-router.get("/all", JobController.getAllJobs);
+router.get('/all', JobController.getAllJobs);
 
 // Recruiter only
 router.post(
-  "/",
+  '/',
   requireAuth,
-  authorizeRoles("RECRUITER"),
+  authorizeRoles('RECRUITER'),
   validate(jobSchema),
   JobController.createJob
 );
 
 router.get(
-  "/recruiter",
+  '/recruiter',
   requireAuth,
-  authorizeRoles("RECRUITER"),
+  authorizeRoles('RECRUITER'),
   JobController.getJobsByRecruiter
 );
 
 // Must be AFTER specific routes to prevent wildcard from catching /recruiter
-router.get("/:id", JobController.getJobById);
+router.get('/:id', JobController.getJobById);
 
 router.put(
-  "/:id",
+  '/:id',
   requireAuth,
-  authorizeRoles("RECRUITER"),
+  authorizeRoles('RECRUITER'),
   validate(jobSchema.partial()),
   JobController.updateJob
 );
 
-router.delete(
-  "/:id",
-  requireAuth,
-  authorizeRoles("RECRUITER"),
-  JobController.deleteJob
-);
+router.delete('/:id', requireAuth, authorizeRoles('RECRUITER'), JobController.deleteJob);
 
 export default router;

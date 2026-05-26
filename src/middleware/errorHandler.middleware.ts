@@ -1,5 +1,5 @@
-import { Request, Response, NextFunction } from "express";
-import { AppError } from "../errors/AppError";
+import { Request, Response, NextFunction } from 'express';
+import { AppError } from '../errors/AppError';
 
 /**
  * Global Express error handler.
@@ -18,25 +18,25 @@ export const errorHandler = (
     return;
   }
 
-  const msg: string = (err as any)?.message ?? "Unknown error";
+  const msg: string = (err as any)?.message ?? 'Unknown error';
 
   // Prisma unique constraint (P2002) — not locale-dependent
-  if ((err as any)?.code === "P2002") {
-    res.status(409).json({ error: "A record with that value already exists." });
+  if ((err as any)?.code === 'P2002') {
+    res.status(409).json({ error: 'A record with that value already exists.' });
     return;
   }
 
   // jsonwebtoken throws these in English regardless of locale
   if (
-    msg.includes("jwt expired") ||
-    msg.includes("invalid token") ||
-    msg.includes("jwt malformed")
+    msg.includes('jwt expired') ||
+    msg.includes('invalid token') ||
+    msg.includes('jwt malformed')
   ) {
     res.status(401).json({ error: msg });
     return;
   }
 
   // Log unexpected errors for debugging (avoid leaking internals to client)
-  console.error("[Unhandled Error]", err);
-  res.status(500).json({ error: "Internal server error" });
+  console.error('[Unhandled Error]', err);
+  res.status(500).json({ error: 'Internal server error' });
 };

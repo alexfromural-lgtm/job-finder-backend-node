@@ -1,9 +1,9 @@
-import { z } from "zod";
-import { signupSchema } from "./jobseeker.schema";
+import { z } from 'zod';
+import { signupSchema } from './jobseeker.schema';
 
 export const recruiterSignupSchema = signupSchema.extend({
-  companyName: z.string().min(1, "Company name is required"),
-  companyWebsite: z.url("Invalid URL").optional(),
+  companyName: z.string().min(1, 'Company name is required'),
+  companyWebsite: z.url('Invalid URL').optional(),
   description: z.string().optional(),
   industry: z.string().optional(),
 });

@@ -1,13 +1,9 @@
-import { Response, NextFunction } from "express";
-import { AuthRequest } from "../middleware/auth.middleware";
-import * as JobService from "../services/job.service";
-import * as jobUtils from "../utils/job.utils";
+import { Response, NextFunction } from 'express';
+import { AuthRequest } from '../middleware/auth.middleware';
+import * as JobService from '../services/job.service';
+import * as jobUtils from '../utils/job.utils';
 
-export const getJobsByRecruiter = async (
-  req: AuthRequest,
-  res: Response,
-  next: NextFunction
-) => {
+export const getJobsByRecruiter = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const recruiter = await jobUtils.validateRecruiterProfile(req.userId!, res);
     if (!recruiter) return;
@@ -19,33 +15,25 @@ export const getJobsByRecruiter = async (
   }
 };
 
-export const createJob = async (
-  req: AuthRequest,
-  res: Response,
-  next: NextFunction
-) => {
+export const createJob = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const recruiter = await jobUtils.validateRecruiterProfile(req.userId!, res);
     if (!recruiter) return;
 
     const job = await JobService.createJob(recruiter.id, req.body);
-    res.status(201).json({ message: "Job created successfully!", job });
+    res.status(201).json({ message: 'Job created successfully!', job });
   } catch (err) {
     next(err);
   }
 };
 
-export const getJobById = async (
-  req: AuthRequest,
-  res: Response,
-  next: NextFunction
-) => {
+export const getJobById = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const jobId = req.params.id;
     const job = await JobService.getJobById(jobId);
 
     if (!job) {
-      res.status(404).json({ error: "Job not found" });
+      res.status(404).json({ error: 'Job not found' });
       return;
     }
 
@@ -55,45 +43,33 @@ export const getJobById = async (
   }
 };
 
-export const updateJob = async (
-  req: AuthRequest,
-  res: Response,
-  next: NextFunction
-) => {
+export const updateJob = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const recruiter = await jobUtils.validateRecruiterProfile(req.userId!, res);
     if (!recruiter) return;
 
     const jobId = req.params.id;
     const job = await JobService.updateJob(jobId, recruiter.id, req.body);
-    res.status(200).json({ message: "Job updated successfully!", job });
+    res.status(200).json({ message: 'Job updated successfully!', job });
   } catch (err) {
     next(err);
   }
 };
 
-export const deleteJob = async (
-  req: AuthRequest,
-  res: Response,
-  next: NextFunction
-) => {
+export const deleteJob = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const recruiter = await jobUtils.validateRecruiterProfile(req.userId!, res);
     if (!recruiter) return;
 
     const jobId = req.params.id;
     await JobService.deleteJob(jobId, recruiter.id);
-    res.status(200).json({ message: "Job deleted successfully!" });
+    res.status(200).json({ message: 'Job deleted successfully!' });
   } catch (err) {
     next(err);
   }
 };
 
-export const getAllJobs = async (
-  req: AuthRequest,
-  res: Response,
-  next: NextFunction
-) => {
+export const getAllJobs = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { category, location, search, page, pageSize } = req.query as Record<
       string,

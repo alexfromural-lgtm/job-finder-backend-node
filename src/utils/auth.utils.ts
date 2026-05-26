@@ -1,18 +1,15 @@
-import { Role } from "@prisma/client";
-import prisma from "../prisma/client";
-import { Response } from "express";
-import { AppError } from "../errors/AppError";
-import {
-  generateAccessToken,
-  generateRefreshToken,
-} from "./token";
-import { IS_PRODUCTION, ENV } from "../config/env";
+import { Role } from '@prisma/client';
+import prisma from '../prisma/client';
+import { Response } from 'express';
+import { AppError } from '../errors/AppError';
+import { generateAccessToken, generateRefreshToken } from './token';
+import { IS_PRODUCTION, ENV } from '../config/env';
 
 /**
  * Validates that email and password are provided.
  */
 export const validateCredentials = (email?: string | null, password?: string | null) => {
-  if (!email || !password) throw new AppError("Email and password are required", 400);
+  if (!email || !password) throw new AppError('Email and password are required', 400);
 };
 
 /**
@@ -28,7 +25,7 @@ export const handleAuthAwareError = (
   if (err instanceof AppError) {
     return res.status(err.statusCode).json({ error: err.message });
   }
-  let status = err.message.includes("not authorized") ? 403 : 400;
+  let status = err.message.includes('not authorized') ? 403 : 400;
   if (options && err.message.includes(options.keyword)) {
     status = options.keywordStatus;
   }
@@ -48,7 +45,7 @@ export const handleAuthAwareError = (
  * - 400 for all other validation errors
  */
 export const handleAuthControllerError = (err: any, res: Response) => {
-  const msg: string = err?.message ?? "Unknown error";
+  const msg: string = err?.message ?? 'Unknown error';
 
   // Prefer structured status code — locale-safe, no string matching needed.
   if (err instanceof AppError) {
@@ -57,13 +54,17 @@ export const handleAuthControllerError = (err: any, res: Response) => {
 
   // Fallback: match against known third-party library messages (English only).
   // jsonwebtoken throws these in English regardless of locale.
-  if (msg.includes("jwt expired") || msg.includes("invalid token") || msg.includes("jwt malformed")) {
+  if (
+    msg.includes('jwt expired') ||
+    msg.includes('invalid token') ||
+    msg.includes('jwt malformed')
+  ) {
     return res.status(401).json({ error: msg });
   }
 
   // Prisma unique constraint violation (P2002) — not locale-dependent.
-  if ((err as any)?.code === "P2002") {
-    return res.status(409).json({ error: "A record with that value already exists." });
+  if ((err as any)?.code === 'P2002') {
+    return res.status(409).json({ error: 'A record with that value already exists.' });
   }
 
   // Any remaining plain errors default to 400 (client mistake).
@@ -75,7 +76,7 @@ export const handleAuthControllerError = (err: any, res: Response) => {
  */
 export const checkUserExistsByEmail = async (email: string) => {
   const existingUser = await prisma.user.findUnique({ where: { email } });
-  if (existingUser) throw new AppError("User already exists", 409);
+  if (existingUser) throw new AppError('User already exists', 409);
 };
 
 /**
@@ -91,7 +92,7 @@ export const generateTokensForUser = async (userId: string, roles: Role[]) => {
  * Sets the refresh token cookie with standard options.
  */
 export function setRefreshTokenCookie(res: Response, refreshToken: string) {
-  res.cookie("refreshToken", refreshToken, {
+  res.cookie('refreshToken', refreshToken, {
     httpOnly: true,
     secure: IS_PRODUCTION,
     // "lax" allows the cookie to be sent on top-level navigations (e.g. clicking
@@ -101,8 +102,8 @@ export function setRefreshTokenCookie(res: Response, refreshToken: string) {
     // login, which is too aggressive for a standard auth flow.  Cross-site
     // state-mutating requests (POST/PUT/DELETE) are still blocked by the browser,
     // which covers the primary CSRF attack surface.
-    sameSite: "lax",
-    path: "/",  // Must be explicit — defaults to the request path otherwise
+    sameSite: 'lax',
+    path: '/', // Must be explicit — defaults to the request path otherwise
     maxAge: ENV.REFRESH_TOKEN_MAX_AGE_MS, // 7 days
   });
 }
@@ -113,7 +114,7 @@ export function setRefreshTokenCookie(res: Response, refreshToken: string) {
  * JS cannot read this cookie, eliminating XSS-based token theft.
  */
 export function setAccessTokenCookie(res: Response, accessToken: string) {
-  res.cookie("accessToken", accessToken, {
+  res.cookie('accessToken', accessToken, {
     httpOnly: true,
     secure: IS_PRODUCTION,
     // Same reasoning as the refresh token cookie above: "lax" lets the browser
@@ -121,8 +122,8 @@ export function setAccessTokenCookie(res: Response, accessToken: string) {
     // (e.g. email magic-links, OAuth callbacks) without opening up cross-site
     // state-mutating requests, striking the right balance between usability and
     // CSRF protection.
-    sameSite: "lax",
-    path: "/",  // Must be explicit — defaults to the request path otherwise
+    sameSite: 'lax',
+    path: '/', // Must be explicit — defaults to the request path otherwise
     maxAge: ENV.ACCESS_TOKEN_MAX_AGE_MS, // 15 minutes
   });
 }

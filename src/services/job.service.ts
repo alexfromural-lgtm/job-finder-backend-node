@@ -1,6 +1,6 @@
-import prisma from "../prisma/client";
-import { AppError } from "../errors/AppError";
-import type { JobInput, JobUpdateInput } from "../validators/job.schema";
+import prisma from '../prisma/client';
+import { AppError } from '../errors/AppError';
+import type { JobInput, JobUpdateInput } from '../validators/job.schema';
 
 export const createJob = async (recruiterId: string, jobData: JobInput) => {
   const job = await prisma.job.create({
@@ -26,16 +26,12 @@ export const getJobById = async (jobId: string) => {
   return job;
 };
 
-export const updateJob = async (
-  jobId: string,
-  recruiterId: string,
-  jobData: JobUpdateInput
-) => {
+export const updateJob = async (jobId: string, recruiterId: string, jobData: JobUpdateInput) => {
   const job = await prisma.job.findUnique({ where: { id: jobId } });
 
-  if (!job) throw new AppError("Job not found", 404);
+  if (!job) throw new AppError('Job not found', 404);
   if (job.recruiterId !== recruiterId)
-    throw new AppError("You are not authorized to update this job", 403);
+    throw new AppError('You are not authorized to update this job', 403);
 
   const updated = await prisma.job.update({
     where: { id: jobId },
@@ -48,9 +44,9 @@ export const updateJob = async (
 export const deleteJob = async (jobId: string, recruiterId: string) => {
   const job = await prisma.job.findUnique({ where: { id: jobId } });
 
-  if (!job) throw new AppError("Job not found", 404);
+  if (!job) throw new AppError('Job not found', 404);
   if (job.recruiterId !== recruiterId)
-    throw new AppError("You are not authorized to delete this job", 403);
+    throw new AppError('You are not authorized to delete this job', 403);
 
   await prisma.job.delete({ where: { id: jobId } });
 };
@@ -58,7 +54,7 @@ export const deleteJob = async (jobId: string, recruiterId: string) => {
 export const getJobsByRecruiter = async (recruiterId: string) => {
   const jobs = await prisma.job.findMany({
     where: { recruiterId },
-    orderBy: { createdAt: "desc" },
+    orderBy: { createdAt: 'desc' },
   });
 
   return jobs;
@@ -79,21 +75,21 @@ export const getAllJobs = async (filters?: {
     isActive: true,
     ...(filters?.category && { category: filters.category }),
     ...(filters?.location && {
-      location: { contains: filters.location, mode: "insensitive" as const },
+      location: { contains: filters.location, mode: 'insensitive' as const },
     }),
     ...(filters?.search && {
       OR: [
-        { title: { contains: filters.search, mode: "insensitive" as const } },
+        { title: { contains: filters.search, mode: 'insensitive' as const } },
         {
           description: {
             contains: filters.search,
-            mode: "insensitive" as const,
+            mode: 'insensitive' as const,
           },
         },
         {
           requirements: {
             contains: filters.search,
-            mode: "insensitive" as const,
+            mode: 'insensitive' as const,
           },
         },
       ],
@@ -106,7 +102,7 @@ export const getAllJobs = async (filters?: {
       include: {
         recruiter: { select: { companyName: true, industry: true } },
       },
-      orderBy: { createdAt: "desc" },
+      orderBy: { createdAt: 'desc' },
       skip,
       take: pageSize,
     }),

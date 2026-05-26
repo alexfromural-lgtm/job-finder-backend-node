@@ -1,36 +1,56 @@
-import { Router } from "express";
-import { authorizeRoles, requireAuth } from "../middleware/auth.middleware";
-import { validate } from "../middleware/validate.middleware";
-import { applicationSchema } from "../validators/application.schema";
-import { updateJobSeekerProfileSchema } from "../validators/jobseeker.schema";
-import * as JobseekerController from "../controllers/jobseeker.controller";
+import { Router } from 'express';
+import { authorizeRoles, requireAuth } from '../middleware/auth.middleware';
+import { validate } from '../middleware/validate.middleware';
+import { applicationSchema } from '../validators/application.schema';
+import { updateJobSeekerProfileSchema } from '../validators/jobseeker.schema';
+import * as JobseekerController from '../controllers/jobseeker.controller';
 
 const router = Router();
 
 // Profile
-router.get("/profile", requireAuth, authorizeRoles("JOB_SEEKER"), JobseekerController.getProfile);
+router.get('/profile', requireAuth, authorizeRoles('JOB_SEEKER'), JobseekerController.getProfile);
 router.patch(
-  "/profile",
+  '/profile',
   requireAuth,
-  authorizeRoles("JOB_SEEKER"),
+  authorizeRoles('JOB_SEEKER'),
   validate(updateJobSeekerProfileSchema),
   JobseekerController.updateProfile
 );
 
 // Applications
 router.post(
-  "/apply/:jobId",
+  '/apply/:jobId',
   requireAuth,
-  authorizeRoles("JOB_SEEKER"),
+  authorizeRoles('JOB_SEEKER'),
   validate(applicationSchema),
   JobseekerController.applyToJob
 );
-router.get("/applications", requireAuth, authorizeRoles("JOB_SEEKER"), JobseekerController.getApplications);
-router.delete("/applications/:id", requireAuth, authorizeRoles("JOB_SEEKER"), JobseekerController.withdrawApplication);
+router.get(
+  '/applications',
+  requireAuth,
+  authorizeRoles('JOB_SEEKER'),
+  JobseekerController.getApplications
+);
+router.delete(
+  '/applications/:id',
+  requireAuth,
+  authorizeRoles('JOB_SEEKER'),
+  JobseekerController.withdrawApplication
+);
 
 // Saved jobs
-router.post("/saved/:jobId", requireAuth, authorizeRoles("JOB_SEEKER"), JobseekerController.saveJob);
-router.get("/saved", requireAuth, authorizeRoles("JOB_SEEKER"), JobseekerController.getSavedJobs);
-router.delete("/saved/:jobId", requireAuth, authorizeRoles("JOB_SEEKER"), JobseekerController.unsaveJob);
+router.post(
+  '/saved/:jobId',
+  requireAuth,
+  authorizeRoles('JOB_SEEKER'),
+  JobseekerController.saveJob
+);
+router.get('/saved', requireAuth, authorizeRoles('JOB_SEEKER'), JobseekerController.getSavedJobs);
+router.delete(
+  '/saved/:jobId',
+  requireAuth,
+  authorizeRoles('JOB_SEEKER'),
+  JobseekerController.unsaveJob
+);
 
 export default router;

@@ -14,7 +14,7 @@ export class AppError extends Error {
     public readonly statusCode: number
   ) {
     super(message);
-    this.name = "AppError";
+    this.name = 'AppError';
     // Maintains correct prototype chain in transpiled ES5
     Object.setPrototypeOf(this, new.target.prototype);
   }

@@ -4,14 +4,14 @@
  */
 
 export interface ApplyToJobPayload {
-  type: "apply-to-job";
+  type: 'apply-to-job';
   userId: string;
   jobId: string;
   coverLetter?: string;
 }
 
 export interface SaveJobPayload {
-  type: "save-job";
+  type: 'save-job';
   userId: string;
   jobId: string;
 }

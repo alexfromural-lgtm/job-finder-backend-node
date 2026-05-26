@@ -1,9 +1,9 @@
-import { Job } from "bull";
-import dbWriteQueue from "./queue";
-import { QueuePayload } from "./types";
-import * as JobseekerService from "../services/jobseeker.service";
+import { Job } from 'bull';
+import dbWriteQueue from './queue';
+import { QueuePayload } from './types';
+import * as JobseekerService from '../services/jobseeker.service';
 
-const CONCURRENCY = parseInt(process.env.QUEUE_CONCURRENCY || "5", 10);
+const CONCURRENCY = parseInt(process.env.QUEUE_CONCURRENCY || '5', 10);
 
 /**
  * Central processor for all queued DB write operations.
@@ -14,7 +14,7 @@ dbWriteQueue.process(CONCURRENCY, async (job: Job<QueuePayload>) => {
   console.log(`[Worker] Processing job #${job.id} | type: ${data.type}`);
 
   switch (data.type) {
-    case "apply-to-job": {
+    case 'apply-to-job': {
       const application = await JobseekerService.applyToJob(
         data.userId,
         data.jobId,
@@ -24,7 +24,7 @@ dbWriteQueue.process(CONCURRENCY, async (job: Job<QueuePayload>) => {
       return application;
     }
 
-    case "save-job": {
+    case 'save-job': {
       const savedJob = await JobseekerService.saveJob(data.userId, data.jobId);
       console.log(`[Worker] Job #${job.id} (save-job) completed.`);
       return savedJob;
@@ -38,11 +38,11 @@ dbWriteQueue.process(CONCURRENCY, async (job: Job<QueuePayload>) => {
   }
 });
 
-dbWriteQueue.on("completed", (job) => {
+dbWriteQueue.on('completed', (job) => {
   console.log(`[Worker] ✓ Job #${job.id} (${job.data.type}) succeeded.`);
 });
 
-dbWriteQueue.on("failed", (job, err) => {
+dbWriteQueue.on('failed', (job, err) => {
   console.error(
     `[Worker] ✗ Job #${job.id} (${job.data.type}) failed after ${job.attemptsMade} attempt(s): ${err.message}`
   );

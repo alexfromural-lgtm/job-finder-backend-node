@@ -1,54 +1,35 @@
-import { Request, Response, NextFunction } from "express";
-import * as AuthService from "../services/auth.service";
-import { AuthRequest } from "../middleware/auth.middleware";
-import {
-  setRefreshTokenCookie,
-  setAccessTokenCookie,
-} from "../utils/auth.utils";
-import { IS_PRODUCTION } from "../config/env";
+import { Request, Response, NextFunction } from 'express';
+import * as AuthService from '../services/auth.service';
+import { AuthRequest } from '../middleware/auth.middleware';
+import { setRefreshTokenCookie, setAccessTokenCookie } from '../utils/auth.utils';
+import { IS_PRODUCTION } from '../config/env';
 
-export const signupJobSeeker = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
+export const signupJobSeeker = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { name, email, password } = req.body;
-    const { accessToken, refreshToken } = await AuthService.signupJobSeeker(
-      name,
-      email,
-      password
-    );
+    const { accessToken, refreshToken } = await AuthService.signupJobSeeker(name, email, password);
 
     setRefreshTokenCookie(res, refreshToken);
     setAccessTokenCookie(res, accessToken);
-    res.status(201).json({ message: "Signed up successfully" });
+    res.status(201).json({ message: 'Signed up successfully' });
   } catch (err) {
     next(err);
   }
 };
 
-export const signupRecruiter = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
+export const signupRecruiter = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { accessToken, refreshToken } = await AuthService.signupRecruiter(req.body);
 
     setRefreshTokenCookie(res, refreshToken);
     setAccessTokenCookie(res, accessToken);
-    res.status(201).json({ message: "Signed up successfully" });
+    res.status(201).json({ message: 'Signed up successfully' });
   } catch (err) {
     next(err);
   }
 };
 
-export const upgradeToRecruiter = async (
-  req: AuthRequest,
-  res: Response,
-  next: NextFunction
-) => {
+export const upgradeToRecruiter = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.userId!;
     const { user, tokens } = await AuthService.upgradeToRecruiter(userId, req.body);
@@ -62,33 +43,25 @@ export const upgradeToRecruiter = async (
   }
 };
 
-export const login = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
+export const login = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { email, password } = req.body;
     const { accessToken, refreshToken } = await AuthService.login(email, password);
 
     setRefreshTokenCookie(res, refreshToken);
     setAccessTokenCookie(res, accessToken);
-    res.status(200).json({ message: "Logged in successfully" });
+    res.status(200).json({ message: 'Logged in successfully' });
   } catch (err) {
     next(err);
   }
 };
 
-export const refreshTokens = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
+export const refreshTokens = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const token = req.cookies?.refreshToken;
 
     if (!token) {
-      res.status(401).json({ error: "No refresh token provided" });
+      res.status(401).json({ error: 'No refresh token provided' });
       return;
     }
 
@@ -96,38 +69,30 @@ export const refreshTokens = async (
 
     setRefreshTokenCookie(res, refreshToken);
     setAccessTokenCookie(res, accessToken);
-    res.status(200).json({ message: "Token refreshed" });
+    res.status(200).json({ message: 'Token refreshed' });
   } catch (err) {
     next(err);
   }
 };
 
-export const logout = async (
-  _req: Request,
-  res: Response,
-  next: NextFunction
-) => {
+export const logout = async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const cookieOpts = {
       httpOnly: true,
       secure: IS_PRODUCTION,
-      sameSite: "lax" as const,
-      path: "/",  // Must match the path used in Set-Cookie, otherwise clear is ignored
+      sameSite: 'lax' as const,
+      path: '/', // Must match the path used in Set-Cookie, otherwise clear is ignored
     };
-    res.clearCookie("refreshToken", cookieOpts);
-    res.clearCookie("accessToken", cookieOpts);
+    res.clearCookie('refreshToken', cookieOpts);
+    res.clearCookie('accessToken', cookieOpts);
 
-    res.json({ message: "Logged out successfully" });
+    res.json({ message: 'Logged out successfully' });
   } catch (err) {
     next(err);
   }
 };
 
-export const getMe = async (
-  req: AuthRequest,
-  res: Response,
-  next: NextFunction
-) => {
+export const getMe = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.userId!;
     const user = await AuthService.getCurrentUser(userId);

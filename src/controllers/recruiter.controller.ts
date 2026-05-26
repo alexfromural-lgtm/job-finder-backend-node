@@ -1,19 +1,15 @@
-import { Response, NextFunction } from "express";
-import { AuthRequest } from "../middleware/auth.middleware";
-import * as RecruiterService from "../services/recruiter.service";
-import { applicationStatusSchema } from "../validators/application.schema";
+import { Response, NextFunction } from 'express';
+import { AuthRequest } from '../middleware/auth.middleware';
+import * as RecruiterService from '../services/recruiter.service';
+import { applicationStatusSchema } from '../validators/application.schema';
 
-export const getProfile = async (
-  req: AuthRequest,
-  res: Response,
-  next: NextFunction
-) => {
+export const getProfile = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.userId!;
     const profile = await RecruiterService.getRecruiterProfile(userId);
 
     if (!profile) {
-      res.status(404).json({ error: "Profile not found" });
+      res.status(404).json({ error: 'Profile not found' });
       return;
     }
 
@@ -23,11 +19,7 @@ export const getProfile = async (
   }
 };
 
-export const updateProfile = async (
-  req: AuthRequest,
-  res: Response,
-  next: NextFunction
-) => {
+export const updateProfile = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.userId!;
     const profile = await RecruiterService.updateRecruiterProfile(userId, req.body);
