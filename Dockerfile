@@ -1,32 +1,42 @@
-# Dockerfile
-
-# Base image
-FROM node:18
-
-# Create app directory
+# ── Stage 1: build ───────────────────────────────────────────────────────────
+FROM node:20-alpine AS builder
 WORKDIR /app
 
-# Copy package files and install dependencies
 COPY package*.json ./
-RUN npm install
+# Install ALL deps (devDeps needed for tsc)
+RUN npm ci
 
-# Copy the rest of the code
 COPY . .
 
+# Generate Prisma client
 RUN npx prisma generate
 
 # Build TypeScript
 RUN npm run build
 
-# Remove any stale scripts from previous builds
-RUN rm -f /usr/local/bin/docker-entrypoint.sh
+# ── Stage 2: runtime ─────────────────────────────────────────────────────────
+FROM node:20-alpine
+WORKDIR /app
 
-# Copy and make entrypoint script executable
-COPY scripts/docker-entrypoint.sh /app/scripts/docker-entrypoint.sh
-RUN chmod +x /app/scripts/docker-entrypoint.sh
+# Install bash and dos2unix to ensure the entrypoint script runs correctly on Alpine
+RUN apk add --no-cache bash dos2unix
 
-# Expose the port your app runs on
+COPY package*.json ./
+RUN npm ci --omit=dev
+
+# Copy generated Prisma Client from builder stage
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+
+# Copy compiled output from builder
+COPY --from=builder /app/dist ./dist
+
+# Copy prisma schema and migrations (needed for runtime migration)
+COPY --from=builder /app/prisma ./prisma
+
+# Copy entrypoint script and ensure it is executable and has LF line endings
+COPY --from=builder /app/scripts ./scripts
+RUN dos2unix ./scripts/docker-entrypoint.sh && chmod +x ./scripts/docker-entrypoint.sh
+
 EXPOSE 5002
 
-# Start the app with custom entrypoint - use sh -c for proper shell execution
-ENTRYPOINT ["/bin/sh", "-c", "bash /app/scripts/docker-entrypoint.sh"]
+ENTRYPOINT ["/bin/sh", "-c", "bash ./scripts/docker-entrypoint.sh"]

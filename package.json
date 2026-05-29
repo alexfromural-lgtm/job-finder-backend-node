@@ -6,7 +6,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "nodemon",
-    "prepare": "husky"
+    "prepare": "node -e \"try { require.resolve('husky'); require('child_process').execSync('husky', { stdio: 'inherit' }); } catch (e) { if (e.code === 'MODULE_NOT_FOUND') process.exit(0); throw e; }\""
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"
