@@ -481,7 +481,7 @@ npx prisma db seed
 
 ## 🔗 Frontend
 
-The React frontend lives at [`../job-finder-react-customized`](../job-finder-react-customized) and proxies all `/api` calls to this service on port **5002**.
+The React frontend lives at [`https://github.com/alexfromural-lgtm/job-finder-react`](https://github.com/alexfromural-lgtm/job-finder-react) and proxies all `/api` calls to this service on port **5002**.
 
 ---
 
